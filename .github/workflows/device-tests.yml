@@ -1,0 +1,111 @@
+# Plays veymia games on a real Android emulator and a real Windows machine.
+# Free: standard GitHub runners cost nothing on public repositories.
+#
+# This repository holds only test scripts. The game source stays private in veymia-games.
+# The builds to test are attached to a temporary release (tag = the "build" input) by
+# veymia-games/scripts/device-test.sh; the release is deleted again when the tests finish.
+name: device tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      build: { description: "Release tag holding the builds", required: true }
+      games: { description: "Games to test, separated by spaces", required: true, default: "veyforge veyhold" }
+
+concurrency: { group: device-tests, cancel-in-progress: false }
+permissions: { contents: write }
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Get the builds
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p dl out/downloads out-test
+          gh release download "${{ inputs.build }}" -D dl -p "*.apk"
+          for g in ${{ inputs.games }}; do mv "dl/$g.apk" out/downloads/; mv "dl/$g-test.apk" out-test/; done
+          ls -la out/downloads out-test
+      - name: Turn on fast emulation (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Emulator, release APK checks, then play every game
+        run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager emulator platform-tools >/dev/null
+          tests/device/android.sh ${{ inputs.games }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: android-results, path: device-results, if-no-files-found: ignore }
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Get the builds
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mkdir -p dl out/downloads out-test
+          gh release download "${{ inputs.build }}" -D dl -p "*.exe"
+          for g in ${{ inputs.games }}; do mv "dl/$g-setup.exe" out/downloads/; mv "dl/$g-test.exe" out-test/; done
+          ls -la out/downloads out-test
+      - name: Install with the real installers, then play every game
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path device-results | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) { try { $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); $bmp.Save((Join-Path (Get-Location) "device-results/windows-$name.png")) } catch { Write-Host "screenshot failed: $name" } }
+          function KillWebViews { Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }
+          $wv = Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" -ErrorAction SilentlyContinue
+          Write-Host "WebView2 runtime: $($wv.pv)"
+          Push-Location tests/device; npm ci --no-audit --no-fund; Pop-Location
+          $status = 0
+          foreach ($game in "${{ inputs.games }}".Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+            Write-Host "############ $game"
+            # 1. the real installer people download: installs, starts, stays open
+            $setup = Join-Path (Get-Location) "out/downloads/$game-setup.exe"
+            Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+            $exe = Join-Path $env:LOCALAPPDATA "$game/$game.exe"
+            if (-not (Test-Path $exe)) { Write-Host "FAIL: $game not installed at $exe"; $status = 1; continue }
+            Write-Host "PASS installed: $exe"
+            $app = Start-Process -FilePath $exe -PassThru
+            Start-Sleep -Seconds 15
+            Shot "$game-installed-app"
+            if ($app.HasExited) { Write-Host "FAIL: installed $game closed by itself"; $status = 1 } else { Write-Host "PASS installed $game opens and keeps running"; Stop-Process -Id $app.Id -Force }
+            KillWebViews
+            # 2. play it: the same app built with the test connection switched on
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP "wv2-$game"
+            $test = Start-Process -FilePath (Join-Path (Get-Location) "out-test/$game-test.exe") -PassThru
+            $ok = $false
+            for ($i = 0; $i -lt 40; $i++) { $r = curl.exe -s -m 20 --noproxy "*" "http://127.0.0.1:9222/json/version"; if ($r -match "Browser") { $ok = $true; break }; Start-Sleep -Seconds 3 }
+            if (-not $ok) { Write-Host "FAIL: $game test connection did not open"; Shot "$game-test-start"; $status = 1; Stop-Process -Id $test.Id -Force -ErrorAction SilentlyContinue; KillWebViews; continue }
+            Start-Sleep -Seconds 3
+            node "tests/device/smoke-$game.mjs" "http://127.0.0.1:9222" device-results windows
+            if ($LASTEXITCODE -ne 0) { $status = 1 }
+            if ($test.HasExited) { Write-Host "FAIL: $game closed unexpectedly"; $status = 1 } else { Stop-Process -Id $test.Id -Force }
+            KillWebViews
+          }
+          exit $status
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: windows-results, path: device-results, if-no-files-found: ignore }
+
+  cleanup:
+    needs: [android, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the temporary builds
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release delete "${{ inputs.build }}" --cleanup-tag --yes -R "${{ github.repository }}" || true
