@@ -2,17 +2,15 @@
 # Free: standard GitHub runners cost nothing on public repositories.
 #
 # This repository holds only test scripts. The game source stays private in veymia-games.
-# The builds to test are attached to a temporary release (tag = the "build" input) by
-# veymia-games/scripts/device-test.sh; the release is deleted again when the tests finish.
+# veymia-games/scripts/device-test.sh pushes the builds to a temporary branch "builds/<time>"
+# (folder builds/ + games.txt). Pushing it starts this run; the branch is deleted when it ends.
 name: device tests
 
 on:
-  workflow_dispatch:
-    inputs:
-      build: { description: "Release tag holding the builds", required: true }
-      games: { description: "Games to test, separated by spaces", required: true, default: "veyforge veyhold" }
+  push:
+    branches: ["builds/**"]
 
-concurrency: { group: device-tests, cancel-in-progress: false }
+concurrency: { group: "device-tests-${{ github.ref }}", cancel-in-progress: false }
 permissions: { contents: write }
 
 jobs:
@@ -24,11 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Get the builds
-        env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p dl out/downloads out-test
-          gh release download "${{ inputs.build }}" -D dl -p "*.apk"
-          for g in ${{ inputs.games }}; do mv "dl/$g.apk" out/downloads/; mv "dl/$g-test.apk" out-test/; done
+          mkdir -p out/downloads out-test
+          for g in $(cat games.txt); do mv "builds/$g.apk" out/downloads/; mv "builds/$g-test.apk" out-test/; done
+          echo "GAMES=$(cat games.txt)" >> "$GITHUB_ENV"
           ls -la out/downloads out-test
       - name: Turn on fast emulation (KVM)
         run: |
@@ -39,7 +36,7 @@ jobs:
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager emulator platform-tools >/dev/null
-          tests/device/android.sh ${{ inputs.games }}
+          tests/device/android.sh $GAMES
       - if: always()
         uses: actions/upload-artifact@v4
         with: { name: android-results, path: device-results, if-no-files-found: ignore }
@@ -53,11 +50,9 @@ jobs:
         with: { node-version: 22 }
       - name: Get the builds
         shell: bash
-        env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          mkdir -p dl out/downloads out-test
-          gh release download "${{ inputs.build }}" -D dl -p "*.exe"
-          for g in ${{ inputs.games }}; do mv "dl/$g-setup.exe" out/downloads/; mv "dl/$g-test.exe" out-test/; done
+          mkdir -p out/downloads out-test
+          for g in $(cat games.txt); do mv "builds/$g-setup.exe" out/downloads/; mv "builds/$g-test.exe" out-test/; done
           ls -la out/downloads out-test
       - name: Install with the real installers, then play every game
         shell: powershell
@@ -71,7 +66,7 @@ jobs:
           Write-Host "WebView2 runtime: $($wv.pv)"
           Push-Location tests/device; npm ci --no-audit --no-fund; Pop-Location
           $status = 0
-          foreach ($game in "${{ inputs.games }}".Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+          foreach ($game in (Get-Content games.txt -Raw).Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)) {
             Write-Host "############ $game"
             # 1. the real installer people download: installs, starts, stays open
             $setup = Join-Path (Get-Location) "out/downloads/$game-setup.exe"
@@ -106,6 +101,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Delete the temporary builds
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: gh release delete "${{ inputs.build }}" --cleanup-tag --yes -R "${{ github.repository }}" || true
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 1 }
+      - name: Delete the temporary builds branch
+        run: git push origin --delete "${{ github.ref_name }}" || true

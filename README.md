@@ -6,6 +6,6 @@ This repository holds only the test scripts. They install each game on a real An
 
 How a run works:
 
-1. `scripts/device-test.sh` in the private games repo uploads the builds to a temporary release here.
+1. `scripts/device-test.sh` in the private games repo pushes the builds to a temporary branch here (`builds/...`).
 2. It starts the **device tests** workflow.
-3. When the tests finish, the workflow deletes the temporary release. Screenshots and logs stay attached to the run.
+3. When the tests finish, the workflow deletes the temporary branch. Screenshots and logs stay attached to the run.
