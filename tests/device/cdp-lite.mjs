@@ -54,6 +54,13 @@ export async function connectLite(httpBase) {
       await new Promise((r) => setTimeout(r, holdMs));
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     },
+    // a real swipe in any direction through the DevTools Input domain
+    swipe: async (x, y, dx, dy) => {
+      const pt = (k) => [{ x: x + dx * k, y: y + dy * k, id: 3, radiusX: 8, radiusY: 8, force: 1 }];
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(0) });
+      for (let i = 1; i <= 6; i++) { await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(i / 6) }); await new Promise((r) => setTimeout(r, 16)); }
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    },
     // a real tap through the DevTools Input domain
     tapAt: async (x, y) => {
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 2, radiusX: 6, radiusY: 6, force: 1 }] });
