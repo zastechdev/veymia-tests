@@ -70,9 +70,11 @@ check('boost button boosts', await page.evaluate(() => vd.race.p.boostT > 0 && v
 await page.waitForTimeout(600); await shot(page, '3-boost');
 const fps = await fpsFor(3000);
 check('frame rate', fps >= FPS_MIN, `${fps.toFixed(1)} fps (quality ${await page.evaluate(() => vd.quality)}, dpr ${await page.evaluate(() => vd.dpr)})`);
-// a rock right in front costs speed
-await page.evaluate(() => { const r = vd.race; const s = r.seg(r.p.z + 200 * 1.5 + 200 * 8); s.objs.push({ id: 999999, kind: 'rock', x: r.p.x }); });
-await page.waitForTimeout(900);
+// a rock right in front costs speed (placed again in the ship's path until it is hit)
+for (let i = 0; i < 12 && !(await page.evaluate(() => vd.race.p.hits >= 1)); i++) {
+  await page.evaluate((i) => { const r = vd.race; r.seg(r.p.z + 200 * 3.5).objs.push({ id: 999000 + i, kind: 'rock', x: r.p.x }); }, i);
+  await page.waitForTimeout(250);
+}
 check('hitting a rock slows the ship', await page.evaluate(() => vd.race.p.hits >= 1));
 
 // leave and continue
