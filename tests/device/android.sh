@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs on the CircleCI Android machine: starts one emulator, then for every game installs the real APK
+# Runs on an Android test machine (GitHub or CircleCI): uses or starts one emulator, then for every game installs the real APK
 # and plays the game.  Usage: android.sh veyforge veyhold ...
 set -uo pipefail
 games="${*:-veyforge}"; res="$(pwd)/device-results"; mkdir -p "$res"
@@ -14,13 +14,15 @@ ready() {  # wait until the emulator answers and has finished booting
   return 1
 }
 
-echo "== start emulator"
-sdkmanager "system-images;android-34;default;x86_64" >/dev/null
-echo no | avdmanager create avd -n test -k "system-images;android-34;default;x86_64" -d pixel_6 >/dev/null
-(emulator -avd test -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -cores 4 -memory 4096 > emulator.log 2>&1 &)
-adb wait-for-device
+if [ -z "${EMULATOR_RUNNING:-}" ]; then   # on GitHub the emulator action starts it before this script
+  echo "== start emulator"
+  sdkmanager "system-images;android-34;default;x86_64" >/dev/null
+  echo no | avdmanager create avd -n test -k "system-images;android-34;default;x86_64" -d pixel_6 >/dev/null
+  (emulator -avd test -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics -cores 4 -memory 4096 > emulator.log 2>&1 &)
+fi
+timeout 300 adb wait-for-device || fail "emulator did not start"
 ready || fail "emulator did not finish booting"
-sleep 45; ready || fail "emulator went offline after boot"
+sleep 20; ready || fail "emulator went offline after boot"
 adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1
 for k in window_animation_scale transition_animation_scale animator_duration_scale; do adb shell settings put global $k 0; done

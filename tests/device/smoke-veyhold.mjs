@@ -41,6 +41,11 @@ const vp = await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]
 check('screen size', vp[0] > 200 && vp[1] > 200, vp.join('x'));
 check('font loaded', await page.evaluate(() => document.fonts.check('700 16px Fredoka')));
 
+// the upgrades screen opens (and shows no errors)
+await page.click('[data-act=upgrades]'); await page.waitForTimeout(200);
+check('upgrades screen opens', await page.evaluate(() => document.querySelectorAll('.forge-card').length >= 4));
+await page.click('[data-act=menu]'); await page.waitForTimeout(200);
+
 // choose the first map through the menus
 await page.click('[data-act=maps]'); await page.waitForTimeout(200);
 check('map list shows 6 maps, only the first open', await page.evaluate(() => document.querySelectorAll('.map-card').length === 6 && document.querySelectorAll('.map-card.locked').length === 5));
