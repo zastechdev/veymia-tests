@@ -58,6 +58,7 @@ await page.click('[data-act=play][data-arg=klondike1]');
 await page.waitForFunction(() => vs.game && vs.game.mode === 'klondike', null, { timeout: 30000 });
 const dealMs = Date.now() - t0;
 check('Klondike deals a deal that can be won', await page.evaluate(() => vs.solvable(new vs.Game('klondike', 1, vs.game.seed))), `${dealMs} ms to shuffle`);
+await page.evaluate(() => { vs.save.settings.autoFound = false; });   // no automatic moves during these exact checks
 await settle(); await shot(page, '2-klondike');
 check('7 columns, 24 cards in the deck', await page.evaluate(() => vs.game.tabs().length === 7 && vs.game.piles[0].cards.length === 24));
 const deck = await slotPoint(0);
@@ -94,6 +95,7 @@ check('hint shows a move', await page.evaluate(() => !!vs.view.hint));
 const fps = await fpsFor(2500);
 check('frame rate', fps >= FPS_MIN, `${fps.toFixed(1)} fps`);
 
+await page.evaluate(() => { vs.save.settings.autoFound = true; });
 // leave and continue
 const mid = await page.evaluate(() => vs.game.moves);
 await page.click('[data-act=game-menu]'); await page.waitForTimeout(150); await page.click('[data-act=menu]'); await page.waitForTimeout(200);
