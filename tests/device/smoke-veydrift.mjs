@@ -51,17 +51,17 @@ await page.click('[data-act=play][data-arg="0"]'); await page.waitForTimeout(500
 check('race starts with a countdown', await page.evaluate(() => !!vd.race && vd.race.state === 'count' && !document.getElementById('countdown').classList.contains('hidden')));
 await shot(page, '2-countdown');
 await page.waitForFunction(() => vd.race && vd.race.state === 'race', null, { timeout: 10000 }).catch(() => {});
+// real speed: the bot steers (a ship nobody steers drifts into the clouds and slows down, as it should)
+await page.evaluate(() => { vd.autopilot = true; });
 const t0 = await page.evaluate(() => vd.race.t); await page.waitForTimeout(3000);
 const st = await page.evaluate(() => ({ t: vd.race.t, speed: vd.race.p.speed / vd.race.maxSpeed, z: vd.race.p.z }));
+await page.evaluate(() => { vd.autopilot = false; });
 check('ship flies at real speed', st.t - t0 > 2.6 && st.speed > 0.5, `${(st.t - t0).toFixed(2)} race-s in 3 s, speed ${(st.speed * 100).toFixed(0)}%`);
 
-// steering with real input: hold the right side, then the left side
-const x0 = await page.evaluate(() => vd.race.p.x);
-await hold(vp[0] * 0.9, vp[1] * 0.6, 700);
-const x1 = await page.evaluate(() => vd.race.p.x);
-await hold(vp[0] * 0.1, vp[1] * 0.6, 1100);
-const x2 = await page.evaluate(() => vd.race.p.x);
-check('holding the right / left side steers', x1 > x0 + 0.08 && x2 < x1 - 0.08, `x ${x0.toFixed(2)} -> ${x1.toFixed(2)} -> ${x2.toFixed(2)}`);
+// steering with real input: from the middle of the road, hold the right side, then the left side
+const steerTest = async (fx) => { await page.evaluate(() => { const p = vd.race.p; p.x = 0; p.speed = vd.race.maxSpeed * 0.3; }); await hold(vp[0] * fx, vp[1] * 0.6, 700); return page.evaluate(() => vd.race.p.x); };
+const xr = await steerTest(0.92), xl = await steerTest(0.08);
+check('holding the right / left side steers', xr > 0.1 && xl < -0.1 && xr - xl > 0.4, `right ${xr.toFixed(2)}, left ${xl.toFixed(2)}`);
 // the boost button
 await page.evaluate(() => { vd.race.p.boost = 1; });
 const bb = await page.evaluate(() => { const r = document.getElementById('boost-btn').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
