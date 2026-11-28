@@ -1,0 +1,11 @@
+{
+ "version": "0.1.1",
+ "notes": "update test",
+ "pub_date": "2026-11-28T12:45:23.037Z",
+ "platforms": {
+  "windows-x86_64": {
+   "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTN2NkSDk0ZGVFNlh0eVZ0NGtiTW1iRWVKTktodjUrUDFJeGd0THpaN3VOWG1xckZMZ2dsM1JTZytUYjdBaDNDZjNsUGtkbmZ0cVRpbC9taXE2RnhlaEwrTXpOMTJJMEFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODY5OTIyCWZpbGU6dmV5a2luZ18wLjEuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4xLjEKMUVrOWpZYzh4L0VFbDJmUFZRT1RIMzlqUmtCb0hnQkJzQnJFOGNxNkI5dVpud2E0SHh6V005ZVUrRDFJOXFMVFkvdTMxaXZ5WGFuUjBFN0czbEcrQkE9PQo=",
+   "url": "http://127.0.0.1:8765/updates/veyking/veyking-0.1.1-setup.exe"
+  }
+ }
+}
