@@ -43,7 +43,7 @@ export async function connectLite(httpBase) {
       while (Date.now() < end) { try { if (await evaluate(fn)) return; } catch { /* page reloading */ } await new Promise((r) => setTimeout(r, 300)); }
       throw new Error('waitForFunction timed out');
     },
-    keyboard: { down: (k) => key('keydown', k), up: (k) => key('keyup', k) },
+    keyboard: { down: (k) => key('keydown', k), up: (k) => key('keyup', k), press: (k) => key('keydown', k), type: async (t) => { for (const c of t) await key('keydown', c); } },
     locator: (sel) => ({ count: () => evaluate((s) => document.querySelectorAll(s).length, sel) }),
     screenshot: async ({ path }) => { const { writeFileSync } = await import('node:fs'); const r = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(path, Buffer.from(r.data, 'base64')); },
     // real touch input through the DevTools Input domain (goes through the WebView's own touch handling)
@@ -59,6 +59,13 @@ export async function connectLite(httpBase) {
       const pt = (k) => [{ x: x + dx * k, y: y + dy * k, id: 3, radiusX: 8, radiusY: 8, force: 1 }];
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(0) });
       for (let i = 1; i <= 6; i++) { await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(i / 6) }); await new Promise((r) => setTimeout(r, 16)); }
+      await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    },
+    // a real swipe through a list of points (letter wheels)
+    swipePath: async (pts) => {
+      const pt = (p) => [{ x: p.x, y: p.y, id: 4, radiusX: 8, radiusY: 8, force: 1 }];
+      await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(pts[0]) });
+      for (let i = 1; i < pts.length; i++) for (let k = 1; k <= 4; k++) { const a = pts[i - 1], b = pts[i]; await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt({ x: a.x + (b.x - a.x) * k / 4, y: a.y + (b.y - a.y) * k / 4 }) }); await new Promise((r) => setTimeout(r, 12)); }
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     },
     // a real tap through the DevTools Input domain
