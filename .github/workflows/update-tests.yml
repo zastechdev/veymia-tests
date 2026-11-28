@@ -1,0 +1,86 @@
+# Proves that installed veymia apps update themselves (no reinstall): an old app finds a newer version on a
+# local test server and becomes that version. Free on public repositories.
+# veymia-games/scripts/update-test.sh pushes upd/ to a temporary branch "updates/<time>"; it is deleted afterwards.
+name: update tests
+
+on:
+  push:
+    branches: ["updates/**"]
+
+concurrency: { group: "update-tests-${{ github.ref }}", cancel-in-progress: false }
+permissions: { contents: write }
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Turn on fast emulation (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Old app updates itself
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          cores: 4
+          ram-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash tests/device/update-android.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: android-update, path: device-results, if-no-files-found: ignore }
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Old app updates itself
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path device-results | Out-Null
+          $info = (Get-Content upd/info.txt -Raw).Trim().Split(" "); $game = $info[0]; $old = $info[1]; $new = $info[2]
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          function Shot($name) { try { $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); $bmp.Save((Join-Path (Get-Location) "device-results/update-windows-$name.png")) } catch { } }
+          $srv = Start-Process -FilePath python -ArgumentList "-m", "http.server", "8765" -WorkingDirectory (Join-Path (Get-Location) "upd/server") -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          curl.exe -s --noproxy "*" "http://127.0.0.1:8765/updates/$game/windows.json"
+          Start-Process -FilePath (Join-Path (Get-Location) "upd/$game-old-setup.exe") -ArgumentList "/S" -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "$game/$game.exe"
+          function Ver { (Get-Item $exe -ErrorAction SilentlyContinue).VersionInfo.ProductVersion }
+          Write-Host "installed version: $(Ver)"
+          $status = 0
+          if ((Ver) -notlike "$old*") { Write-Host "FAIL old version not installed"; $status = 1 } else { Write-Host "PASS starts at $old" }
+          Start-Process -FilePath $exe | Out-Null
+          $done = $false
+          for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Seconds 3; if ((Ver) -like "$new*") { $done = $true; break } ; if ($i -eq 3) { Shot "checking" } }
+          Shot "after"
+          if ($done) { Write-Host "PASS updated itself to $new" } else { Write-Host "FAIL still $(Ver) after 3 minutes"; $status = 1 }
+          Start-Sleep -Seconds 10
+          $running = Get-Process -Name $game -ErrorAction SilentlyContinue
+          if ($running) { Write-Host "PASS the updated game opened again" } else { Write-Host "FAIL the updated game is not running"; $status = 1 }
+          Shot "reopened"
+          Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
+          exit $status
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: windows-update, path: device-results, if-no-files-found: ignore }
+
+  cleanup:
+    needs: [android, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 1 }
+      - name: Delete the temporary branch
+        run: git push origin --delete "${{ github.ref_name }}" || true
