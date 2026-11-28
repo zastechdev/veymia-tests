@@ -117,7 +117,7 @@ check('frame rate while the computer thinks', fps >= FPS_MIN, `${fps.toFixed(1)}
 await shot(page, '4-champion');
 await page.evaluate(() => { vk.storeGame(); localStorage.setItem('veyking.save.v1', JSON.stringify(vk.save)); location.reload(); });
 await page.waitForFunction(() => window.vk && document.querySelector('.logo'), null, { timeout: 30000 });
-check('save survives restart', await page.evaluate(() => !!vk.save.solved['1-0'] && !!vk.save.game && (vk.save.levels[3] || vk.save.game)));
+check('save survives restart', await page.evaluate(() => !!vk.save.solved['1-0'] && !!vk.save.game));
 await page.evaluate(() => { localStorage.removeItem('veyking.debug'); });
 check('no script errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 writeFileSync(join(out, `${platform}-veyking-results.json`), JSON.stringify({ platform, results, errors }, null, 2));
